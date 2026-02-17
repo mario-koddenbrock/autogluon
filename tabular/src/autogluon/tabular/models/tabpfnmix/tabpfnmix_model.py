@@ -336,7 +336,7 @@ class TabPFNMixModel(AbstractModel):
         default_auxiliary_params = super()._get_default_auxiliary_params()
         default_auxiliary_params.update(
             {
-                "max_classes": 10,
+                "max_classes": 1_000,
             }
         )
         return default_auxiliary_params

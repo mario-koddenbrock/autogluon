@@ -188,9 +188,9 @@ class TabDPTModel(AbstractTorchModel):
         default_auxiliary_params = super()._get_default_auxiliary_params()
         default_auxiliary_params.update(
             {
-                "max_rows": 100000,  # TODO: Test >100k rows
-                "max_features": 2500,  # TODO: Test >2500 features
-                "max_classes": 10,  # TODO: Test >10 classes
+                "max_rows": 100_000,  # TODO: Test >100k rows
+                "max_features": 10_000,  # TODO: Test >2500 features
+                "max_classes": 1_000,  # TODO: Test >10 classes
             }
         )
         return default_auxiliary_params

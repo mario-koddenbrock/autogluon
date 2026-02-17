@@ -189,9 +189,9 @@ class MitraModel(AbstractTorchModel):
         default_auxiliary_params = super()._get_default_auxiliary_params()
         default_auxiliary_params.update(
             {
-                "max_rows": 10000,
-                "max_features": 500,
-                "max_classes": 10,
+                "max_rows": 100_000,
+                "max_features": 10_000,
+                "max_classes": 1_000,
             }
         )
         return default_auxiliary_params

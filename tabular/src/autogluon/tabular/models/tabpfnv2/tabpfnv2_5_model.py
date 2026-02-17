@@ -221,8 +221,8 @@ class TabPFNModel(AbstractTorchModel):
         default_auxiliary_params.update(
             {
                 "max_rows": 100_000,
-                "max_features": 2000,
-                "max_classes": 10,
+                "max_features": 10_000,
+                "max_classes": 1_000,
                 "model_telemetry": False,
             }
         )
@@ -386,9 +386,9 @@ class RealTabPFNv2Model(TabPFNModel):
         default_auxiliary_params = super()._get_default_auxiliary_params()
         default_auxiliary_params.update(
             {
-                "max_rows": 10_000,
-                "max_features": 500,
-                "max_classes": 10,
+                "max_rows": 100_000,
+                "max_features": 10_000,
+                "max_classes": 1_000,
                 "max_batch_size": 10000,  # TabPFN seems to cryptically error if predicting on 100,000 samples.
             }
         )

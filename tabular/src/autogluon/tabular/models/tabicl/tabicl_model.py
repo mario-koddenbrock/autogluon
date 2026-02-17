@@ -115,8 +115,8 @@ class TabICLModel(AbstractTorchModel):
         default_auxiliary_params = super()._get_default_auxiliary_params()
         default_auxiliary_params.update(
             {
-                "max_rows": 30000,
-                "max_features": 2000,
+                "max_rows": 100_000,
+                "max_features": 10_000,
             }
         )
         return default_auxiliary_params
