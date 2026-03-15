@@ -120,10 +120,17 @@ class HpoExecutor(ABC):
             if user_specified_trial_num_cpus is not None or user_specified_trial_num_gpus is not None:
                 num_trials_in_parallel_with_gpu = math.inf
                 if user_specified_trial_num_cpus is None:
-                    # If user didn't specify cpu per trial, we find the min based on gpu
-                    num_trials_in_parallel_with_gpu = num_gpus // user_specified_trial_num_gpus
+                    # If user didn't specify cpu per trial, we find the min based on gpu.
+                    # Guard against zero-GPU nodes where user_specified_trial_num_gpus == 0
+                    # would cause ZeroDivisionError (num_gpus // 0).
+                    if user_specified_trial_num_gpus == 0:
+                        num_trials_in_parallel_with_gpu = math.inf
+                    else:
+                        num_trials_in_parallel_with_gpu = num_gpus // user_specified_trial_num_gpus
                     user_specified_trial_num_cpus = (
                         num_cpus // num_trials_in_parallel_with_gpu
+                        if num_trials_in_parallel_with_gpu != math.inf
+                        else minimum_model_num_cpus or 1
                     )  # keep gpus per trial int to avoid complexity
                 num_trials_in_parallel_with_cpu = math.inf
                 if user_specified_trial_num_gpus is None:
