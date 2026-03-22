@@ -1364,37 +1364,8 @@ class AbstractModel(ModelBase, Tunable):
                     f"but found '{self.problem_type}' problem_type."
                 )
             assert self.problem_type in problem_types
-        if max_classes is not None:
-            if self.num_classes is not None and self.num_classes > max_classes:
-                raise AssertionError(
-                    f"ag.max_classes={max_classes} for model '{self.name}', but found {self.num_classes} classes."
-                )
-        if max_rows is not None:
-            n_rows = X.shape[0]
-            if n_rows > max_rows:
-                raise AssertionError(f"ag.max_rows={max_rows} for model '{self.name}', but found {n_rows} rows.")
-        if max_features is not None:
-            n_features = X.shape[1]
-
-            if feature_metadata is None:
-                # Fallback to using self._feature_metadata if not provided
-                feature_metadata = self._feature_metadata
-
-            if feature_metadata is not None:
-                feature_generator = self.get_preprocessor()
-                if feature_generator is not None:
-                    # TODO: Can be faster if can calculate new_feature_metadata w/o fitting feature generator
-                    new_feature_metadata = self._estimate_dtypes_after_preprocessing_cheap(
-                        X=X,
-                        y=kwargs["y"],
-                        feature_generator=feature_generator,
-                    )
-                    n_features = len(new_feature_metadata.get_features())
-
-            if n_features > max_features:
-                raise AssertionError(
-                    f"ag.max_features={max_features} for model '{self.name}', but found {n_features} features."
-                )
+        # max_classes / max_rows / max_features checks intentionally removed —
+        # no hard limits are enforced in this fork.
 
     def _post_fit(self, **kwargs):
         """
