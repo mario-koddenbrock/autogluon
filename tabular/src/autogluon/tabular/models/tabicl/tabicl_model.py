@@ -149,9 +149,8 @@ class TabICLModel(AbstractTorchModel):
         default_auxiliary_params = super()._get_default_auxiliary_params()
         default_auxiliary_params.update(
             {
-                # TODO: Instead of caps, should we subsample for large datasets?
-                "max_rows": 1000000,  # TODO: What should be the cap? 1 million rows works, but unsure if it is good
-                "max_features": 10_000,  # TODO: What should be the cap? 10k features works, but unsure if it is good
+                "max_rows": None,
+                "max_features": None,
                 "max_batch_size": 1024,  # avoid excessive VRAM usage
             }
         )
