@@ -164,6 +164,17 @@ class TabPFNModel(AbstractTorchModel):
             if k.startswith("inference_config/"):
                 del hps[k]
 
+        # Hard limit: skip gracefully for datasets with extreme class counts that
+        # TabPFN cannot handle in practice (e.g. rruff_mineral_raw with 1573 classes).
+        if is_classification and self.num_classes is not None:
+            max_classes_hard = self.params_aux.get("max_classes_hard", 500)
+            if self.num_classes > max_classes_hard:
+                raise AssertionError(
+                    f"TabPFN skipped: dataset has {self.num_classes} classes, "
+                    f"which exceeds the hard limit of {max_classes_hard}. "
+                    "Set params_aux['max_classes_hard'] to override."
+                )
+
         # Model and fit
         # TabPFN's validate_num_classes raises unconditionally regardless of
         # ignore_pretraining_limits. Patch it out so our limit removal is effective.
