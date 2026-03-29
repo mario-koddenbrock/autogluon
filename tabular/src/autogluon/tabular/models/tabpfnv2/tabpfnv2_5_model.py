@@ -165,11 +165,19 @@ class TabPFNModel(AbstractTorchModel):
                 del hps[k]
 
         # Model and fit
-        self.model = model_base(**hps)
-        self.model = self.model.fit(
-            X=X,
-            y=y,
-        )
+        # TabPFN's validate_num_classes raises unconditionally regardless of
+        # ignore_pretraining_limits. Patch it out so our limit removal is effective.
+        import tabpfn.classifier as _tabpfn_clf
+        _orig_validate = _tabpfn_clf.validate_num_classes
+        _tabpfn_clf.validate_num_classes = lambda *a, **kw: None
+        try:
+            self.model = model_base(**hps)
+            self.model = self.model.fit(
+                X=X,
+                y=y,
+            )
+        finally:
+            _tabpfn_clf.validate_num_classes = _orig_validate
 
     def _predict_proba(self, X, **kwargs) -> np.ndarray:
         if not self.params_aux.get("model_telemetry", False):
