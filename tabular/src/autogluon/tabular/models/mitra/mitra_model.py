@@ -137,6 +137,16 @@ class MitraModel(AbstractTorchModel):
             else:
                 hyp["device"] = self._get_default_device()
 
+        if self.problem_type in ["binary", "multiclass"] and self.num_classes is not None:
+            from .sklearn_interface import DEFAULT_CLASSES
+            max_classes_hard = self.params_aux.get("max_classes_hard", DEFAULT_CLASSES)
+            if self.num_classes > max_classes_hard:
+                raise AssertionError(
+                    f"Mitra skipped: dataset has {self.num_classes} classes, "
+                    f"which exceeds the hard limit of {max_classes_hard}. "
+                    "Set params_aux['max_classes_hard'] to override."
+                )
+
         if hyp["device"] == "cpu" and hyp.get("fine_tune", True):
             logger.log(
                 30,
