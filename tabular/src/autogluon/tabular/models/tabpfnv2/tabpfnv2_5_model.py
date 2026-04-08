@@ -165,7 +165,31 @@ class TabPFNModel(AbstractTorchModel):
                 del hps[k]
 
         # Model and fit
-        self.model = model_base(**hps)
+        base_model = model_base(**hps)
+
+        # If the dataset has more classes than TabPFN supports natively, wrap with
+        # ManyClassClassifier (ECOC-based extension from tabpfn-extensions).
+        many_class_threshold = self.params_aux.get("many_class_threshold", 10)
+        if is_classification and self.num_classes is not None and self.num_classes > many_class_threshold:
+            try:
+                from tabpfn_extensions.many_class import ManyClassClassifier
+
+                logger.log(
+                    20,
+                    f"\tTabPFN: {self.num_classes} classes exceeds native limit ({many_class_threshold}). "
+                    "Using ManyClassClassifier (ECOC wrapper).",
+                )
+                self.model = ManyClassClassifier(estimator=base_model)
+            except ImportError:
+                logger.log(
+                    30,
+                    "\tTabPFN: tabpfn-extensions not installed; cannot use ManyClassClassifier. "
+                    "Install with: pip install tabpfn-extensions",
+                )
+                self.model = base_model
+        else:
+            self.model = base_model
+
         self.model = self.model.fit(
             X=X,
             y=y,
@@ -224,6 +248,7 @@ class TabPFNModel(AbstractTorchModel):
                 "max_features": None,
                 "max_classes": None,
                 "model_telemetry": False,
+                "many_class_threshold": 10,  # Use ManyClassClassifier above this class count
             }
         )
         return default_auxiliary_params
