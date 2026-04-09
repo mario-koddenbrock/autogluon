@@ -95,6 +95,14 @@ class MitraModel(AbstractTorchModel):
         need_to_reset_torch_threads = False
         torch_threads_og = None
 
+        from .sklearn_interface import DEFAULT_CLASSES as _MITRA_MAX_CLASSES
+
+        if self.problem_type in ["binary", "multiclass"] and self.num_classes > _MITRA_MAX_CLASSES:
+            raise ValueError(
+                f"Mitra only supports up to {_MITRA_MAX_CLASSES} classes, "
+                f"but the dataset has {self.num_classes} classes. Skipping."
+            )
+
         try:
             model_cls = self.get_model_cls()
             import torch
