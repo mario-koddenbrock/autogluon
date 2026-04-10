@@ -179,7 +179,7 @@ class TabPFNModel(AbstractTorchModel):
                     f"\tTabPFN: {self.num_classes} classes exceeds native limit ({many_class_threshold}). "
                     "Using ManyClassClassifier (ECOC wrapper).",
                 )
-                self.model = ManyClassClassifier(estimator=base_model)
+                self.model = ManyClassClassifier(estimator=base_model, alphabet_size=many_class_threshold)
             except ImportError:
                 logger.log(
                     40,

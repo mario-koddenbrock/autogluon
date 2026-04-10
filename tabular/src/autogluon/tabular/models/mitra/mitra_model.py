@@ -189,7 +189,7 @@ class MitraModel(AbstractTorchModel):
             base_model = model_cls(**hyp)
             # ManyClassClassifier uses the standard sklearn fit(X, y) interface;
             # validation data and time_limit are not forwarded.
-            self.model = ManyClassClassifier(estimator=base_model).fit(X, y)
+            self.model = ManyClassClassifier(estimator=base_model, alphabet_size=many_class_threshold).fit(X, y)
         else:
             self.model = model_cls(**hyp)
             model = self.model.fit(
