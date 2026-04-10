@@ -232,13 +232,21 @@ class TabPFNModel(AbstractTorchModel):
             self._set_default_param_value(param, val)
 
     def get_device(self) -> str:
-        # When wrapped with ManyClassClassifier, devices_ lives on the inner estimator.
+        # Unwrap ManyClassClassifier to reach the base TabPFN estimator.
         model = getattr(self.model, "estimator", self.model)
-        return model.devices_[0].type
+        # TabPFN v2 internal model exposes devices_ (list of torch.device) after fit.
+        # The public TabPFNClassifier exposes a plain .device string instead.
+        if hasattr(model, "devices_"):
+            return model.devices_[0].type
+        device = getattr(model, "device", "cpu")
+        if hasattr(device, "type"):
+            return device.type
+        return str(device).split(":")[0]
 
     def _set_device(self, device: str):
         model = getattr(self.model, "estimator", self.model)
-        model.to(device)
+        if hasattr(model, "to"):
+            model.to(device)
 
     @classmethod
     def supported_problem_types(cls) -> list[str] | None:
