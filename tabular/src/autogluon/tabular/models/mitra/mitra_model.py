@@ -41,6 +41,7 @@ class MitraModel(AbstractTorchModel):
         super().__init__(**kwargs)
         self._weights_saved = False
         self._feature_generator = None
+        self._use_many_class = False  # True when ManyClassClassifier ECOC wrapper is active
 
     @staticmethod
     def _get_default_device():
@@ -97,11 +98,12 @@ class MitraModel(AbstractTorchModel):
 
         from .sklearn_interface import DEFAULT_CLASSES as _MITRA_MAX_CLASSES
 
-        if self.problem_type in ["binary", "multiclass"] and self.num_classes > _MITRA_MAX_CLASSES:
-            raise ValueError(
-                f"Mitra only supports up to {_MITRA_MAX_CLASSES} classes, "
-                f"but the dataset has {self.num_classes} classes. Skipping."
-            )
+        many_class_threshold = self.params_aux.get("many_class_threshold", _MITRA_MAX_CLASSES)
+        self._use_many_class = (
+            self.problem_type in ["binary", "multiclass"]
+            and self.num_classes is not None
+            and self.num_classes > many_class_threshold
+        )
 
         try:
             model_cls = self.get_model_cls()
@@ -164,24 +166,42 @@ class MitraModel(AbstractTorchModel):
         if "verbose" not in hyp:
             hyp["verbose"] = verbosity >= 3
 
-        self.model = model_cls(**hyp)
-
         X = self.preprocess(X, y=y, is_train=True)
         if X_val is not None:
             X_val = self.preprocess(X_val)
 
-        model = self.model.fit(
-            X=X,
-            y=y,
-            X_val=X_val,
-            y_val=y_val,
-            time_limit=time_limit,
-        )
-
-        for i in range(len(model.trainers)):
-            model.trainers[i].post_fit_optimize()
-
-        self.model = model
+        if self._use_many_class:
+            try:
+                from tabpfn_extensions.many_class import ManyClassClassifier
+            except ImportError:
+                logger.log(
+                    40,
+                    "\tMitra: tabpfn-extensions not installed; cannot use ManyClassClassifier "
+                    f"for {self.num_classes} classes (limit: {many_class_threshold}). "
+                    "Install with: pip install tabpfn-extensions",
+                )
+                raise
+            logger.log(
+                20,
+                f"\tMitra: {self.num_classes} classes exceeds native limit ({many_class_threshold}). "
+                "Using ManyClassClassifier (ECOC wrapper).",
+            )
+            base_model = model_cls(**hyp)
+            # ManyClassClassifier uses the standard sklearn fit(X, y) interface;
+            # validation data and time_limit are not forwarded.
+            self.model = ManyClassClassifier(estimator=base_model).fit(X, y)
+        else:
+            self.model = model_cls(**hyp)
+            model = self.model.fit(
+                X=X,
+                y=y,
+                X_val=X_val,
+                y_val=y_val,
+                time_limit=time_limit,
+            )
+            for i in range(len(model.trainers)):
+                model.trainers[i].post_fit_optimize()
+            self.model = model
 
         if need_to_reset_torch_threads:
             torch.set_num_threads(torch_threads_og)
