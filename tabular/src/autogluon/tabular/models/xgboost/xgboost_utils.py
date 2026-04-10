@@ -56,6 +56,12 @@ def func_generator(metric: Scorer, problem_type: str):
         if problem_type in [MULTICLASS, SOFTCLASS]:
 
             def custom_metric(y_true, y_hat):
+                # XGBoost may pass multiclass predictions as a flat 1D array
+                # (n_samples * n_classes) rather than 2D (n_samples, n_classes).
+                if y_hat.ndim == 1:
+                    n_classes = len(np.unique(y_true))
+                    if n_classes > 1 and len(y_hat) == len(y_true) * n_classes:
+                        y_hat = y_hat.reshape(len(y_true), n_classes)
                 y_hat = y_hat.argmax(axis=1)
                 return sign * metric(y_true, y_hat)
 
