@@ -182,11 +182,12 @@ class TabPFNModel(AbstractTorchModel):
                 self.model = ManyClassClassifier(estimator=base_model)
             except ImportError:
                 logger.log(
-                    30,
-                    "\tTabPFN: tabpfn-extensions not installed; cannot use ManyClassClassifier. "
+                    40,
+                    "\tTabPFN: tabpfn-extensions not installed; cannot use ManyClassClassifier "
+                    f"for {self.num_classes} classes (limit: {many_class_threshold}). "
                     "Install with: pip install tabpfn-extensions",
                 )
-                self.model = base_model
+                raise
         else:
             self.model = base_model
 
