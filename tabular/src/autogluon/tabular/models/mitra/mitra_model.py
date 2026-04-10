@@ -220,6 +220,7 @@ class MitraModel(AbstractTorchModel):
                 "max_rows": None,
                 "max_features": None,
                 "max_classes": None,
+                "many_class_threshold": 10,  # Use ManyClassClassifier (ECOC) above this class count
             }
         )
         return default_auxiliary_params
@@ -230,18 +231,20 @@ class MitraModel(AbstractTorchModel):
         return str(Path(path) / self.weights_file_name)
 
     def save(self, path: str = None, verbose=True) -> str:
-        _model_weights_list = None
-        if self.model is not None:
-            self._save_model_artifact(path=path)
-            _model_weights_list = []
-            for i in range(len(self.model.trainers)):
-                _model_weights_list.append(self.model.trainers[i].model)
-                self.model.trainers[i].model = None
+        # When using ManyClassClassifier the model is a plain sklearn wrapper;
+        # skip the custom torch-weight artifact and fall back to standard pickling.
+        if self._use_many_class or self.model is None:
+            return super().save(path=path, verbose=verbose)
+
+        self._save_model_artifact(path=path)
+        _model_weights_list = []
+        for i in range(len(self.model.trainers)):
+            _model_weights_list.append(self.model.trainers[i].model)
+            self.model.trainers[i].model = None
 
         path = super().save(path=path, verbose=verbose)
-        if _model_weights_list is not None:
-            for i in range(len(self.model.trainers)):
-                self.model.trainers[i].model = _model_weights_list[i]
+        for i in range(len(self.model.trainers)):
+            self.model.trainers[i].model = _model_weights_list[i]
         return path
 
     def _save_model_artifact(self, path: str | None):
