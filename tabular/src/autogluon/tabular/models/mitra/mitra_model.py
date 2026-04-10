@@ -274,17 +274,21 @@ class MitraModel(AbstractTorchModel):
         self.set_device(device)
 
     def _set_device(self, device: str):
+        if self._use_many_class:
+            return  # ManyClassClassifier delegates device management to its sub-estimators
         for i in range(len(self.model.trainers)):
             self.model.trainers[i].set_device(device)
 
     def get_device(self) -> str:
+        if self._use_many_class:
+            return "cpu"
         return self.model.trainers[0].device
 
     @classmethod
     def load(cls, path: str, reset_paths=True, verbose=True) -> Self:
         model: MitraModel = super().load(path=path, reset_paths=reset_paths, verbose=verbose)
 
-        if model._weights_saved:
+        if not model._use_many_class and model._weights_saved:
             model._load_model_artifact()
             model._weights_saved = False
         return model
