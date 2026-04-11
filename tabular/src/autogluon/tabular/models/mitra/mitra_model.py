@@ -17,6 +17,35 @@ from autogluon.tabular.models.abstract.abstract_torch_model import AbstractTorch
 logger = logging.getLogger(__name__)
 
 
+class _MitraSklearnWrapper:
+    """Thin sklearn-compatible wrapper around a Mitra model instance.
+
+    ManyClassClassifier (tabpfn-extensions) requires each fitted sub-estimator
+    to expose ``classes_`` after ``fit()``.  Mitra doesn't follow the sklearn
+    convention, so this wrapper adds it.  The wrapper is used only when the
+    ECOC many-class path is active.
+    """
+
+    def __init__(self, model_cls, **hyp):
+        self._model_cls = model_cls
+        self._hyp = hyp
+
+    def fit(self, X, y):
+        self._model = self._model_cls(**self._hyp)
+        self._model.fit(X=X, y=y)
+        self.classes_ = np.unique(y)
+        return self
+
+    def predict_proba(self, X):
+        return self._model.predict_proba(X=X)
+
+    def predict(self, X):
+        return self._model.predict(X=X)
+
+    def get_params(self, deep=True):  # sklearn clone() compatibility
+        return {"model_cls": self._model_cls, **self._hyp}
+
+
 class MitraModel(AbstractTorchModel):
     """
     Mitra is a tabular foundation model pre-trained purely on synthetic data with the goal
@@ -187,21 +216,11 @@ class MitraModel(AbstractTorchModel):
                 f"\tMitra: {self.num_classes} classes exceeds native limit ({many_class_threshold}). "
                 "Using ManyClassClassifier (ECOC wrapper).",
             )
-            base_model = model_cls(**hyp)
-            # ManyClassClassifier uses the standard sklearn fit(X, y) interface;
-            # validation data and time_limit are not forwarded.
-            # ManyClassClassifier._utils.run_row requires `classes_` on each
-            # fitted sub-estimator to align probability columns.  Mitra doesn't
-            # set it natively, so we inject it onto the prototype; the wrapper
-            # clones the estimator for each binary sub-problem, and each clone
-            # will also inherit/set classes_ during its own fit call — but the
-            # top-level instance checked by run_row also needs it.
-            wrapped = ManyClassClassifier(estimator=base_model, alphabet_size=many_class_threshold)
-            wrapped.fit(X, y)
-            import numpy as np
-            if not hasattr(wrapped.estimator, "classes_"):
-                wrapped.estimator.classes_ = np.unique(y)
-            self.model = wrapped
+            # ManyClassClassifier (ECOC) requires each fitted sub-estimator to
+            # expose classes_ after fit().  Mitra doesn't follow the sklearn
+            # convention, so wrap it in _MitraSklearnWrapper which sets classes_.
+            base_model = _MitraSklearnWrapper(model_cls, **hyp)
+            self.model = ManyClassClassifier(estimator=base_model, alphabet_size=many_class_threshold).fit(X, y)
         else:
             self.model = model_cls(**hyp)
             model = self.model.fit(
