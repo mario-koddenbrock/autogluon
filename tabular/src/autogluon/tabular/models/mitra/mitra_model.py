@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 from typing import List, Optional
 
+import numpy as np
 import pandas as pd
 from typing_extensions import Self
 
@@ -189,7 +190,18 @@ class MitraModel(AbstractTorchModel):
             base_model = model_cls(**hyp)
             # ManyClassClassifier uses the standard sklearn fit(X, y) interface;
             # validation data and time_limit are not forwarded.
-            self.model = ManyClassClassifier(estimator=base_model, alphabet_size=many_class_threshold).fit(X, y)
+            # ManyClassClassifier._utils.run_row requires `classes_` on each
+            # fitted sub-estimator to align probability columns.  Mitra doesn't
+            # set it natively, so we inject it onto the prototype; the wrapper
+            # clones the estimator for each binary sub-problem, and each clone
+            # will also inherit/set classes_ during its own fit call — but the
+            # top-level instance checked by run_row also needs it.
+            wrapped = ManyClassClassifier(estimator=base_model, alphabet_size=many_class_threshold)
+            wrapped.fit(X, y)
+            import numpy as np
+            if not hasattr(wrapped.estimator, "classes_"):
+                wrapped.estimator.classes_ = np.unique(y)
+            self.model = wrapped
         else:
             self.model = model_cls(**hyp)
             model = self.model.fit(
