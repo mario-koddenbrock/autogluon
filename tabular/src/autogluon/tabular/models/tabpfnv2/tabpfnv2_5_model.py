@@ -88,17 +88,31 @@ class TabPFNModel(AbstractTorchModel):
         from tabpfn import TabPFNClassifier, TabPFNRegressor
         from tabpfn.model.loading import resolve_model_path
         from torch.cuda import is_available
+        import os
+        import torch
 
         is_classification = self.problem_type in ["binary", "multiclass"]
 
         model_base = TabPFNClassifier if is_classification else TabPFNRegressor
 
-        device = "cuda" if num_gpus != 0 else "cpu"
-        if (device == "cuda") and (not is_available()):
-            raise AssertionError(
-                "Fit specified to use GPU, but CUDA is not available on this machine. "
-                "Please switch to CPU usage instead.",
-            )
+        if num_gpus != 0:
+            if is_available():
+                device = "cuda"
+            elif torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                raise AssertionError(
+                    "Fit specified to use GPU, but neither CUDA nor MPS is available on this machine. "
+                    "Please switch to CPU usage instead.",
+                )
+        else:
+            # num_gpus == 0 but still prefer MPS on Apple Silicon over pure CPU
+            device = "mps" if torch.backends.mps.is_available() else "cpu"
+
+        if device == "mps":
+            # Disable the MPS allocator watermark so large TabPFN models don't OOM.
+            # Without this, the default ratio caps usable memory well below physical RAM.
+            os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
 
         if verbosity >= 2:
             # logs "Built with PriorLabs-TabPFN"
