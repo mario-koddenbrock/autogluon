@@ -416,6 +416,71 @@ class RealTabPFNv25Model(TabPFNModel):
             _HAS_LOGGED_TABPFN_NONCOMMERICAL = True  # Avoid repeated logging
 
 
+class RealTabPFNv26Model(TabPFNModel):
+    """TabPFN-v2.6 — intermediate checkpoint between v2.5 and v3, released with tabpfn 8.x.
+
+    Hosted at Prior-Labs/tabpfn_2_6 on HuggingFace.
+
+    .. versionadded:: 1.6.0
+    """
+
+    ag_key = "REALTABPFN-V2.6"
+    ag_name = "RealTabPFN-v2.6"
+
+    default_classification_model: str | None = "tabpfn-v2.6-classifier-v2.6_default.ckpt"
+    default_regression_model: str | None = "tabpfn-v2.6-regressor-v2.6_default.ckpt"
+
+    @staticmethod
+    def extra_checkpoints_for_tuning(problem_type: str) -> list[str]:
+        return []
+
+    def _log_license(self, device: str):
+        global _HAS_LOGGED_TABPFN_NONCOMMERICAL
+        if not _HAS_LOGGED_TABPFN_NONCOMMERICAL:
+            logger.log(
+                30,
+                "\tWarning: TabPFN-2.6 is a NONCOMMERCIAL model. "
+                "Usage of this artifact (including through AutoGluon) is not permitted "
+                "for commercial tasks unless granted explicit permission "
+                "by the model authors (PriorLabs).",
+            )
+            _HAS_LOGGED_TABPFN_NONCOMMERICAL = True
+
+
+class TabPFNv3Model(TabPFNModel):
+    """TabPFN-v3 — released with tabpfn 8.x.
+
+    Hosted at Prior-Labs/tabpfn_3 on HuggingFace.
+    Check https://huggingface.co/Prior-Labs/tabpfn_3 for the current license terms.
+
+    .. versionadded:: 1.6.0
+    """
+
+    ag_key = "TABPFN-V3"
+    ag_name = "TabPFN-v3"
+
+    default_classification_model: str | None = "tabpfn-v3-classifier-v3_default.ckpt"
+    default_regression_model: str | None = "tabpfn-v3-regressor-v3_default.ckpt"
+
+    @staticmethod
+    def extra_checkpoints_for_tuning(problem_type: str) -> list[str]:
+        if problem_type == "classification":
+            return [
+                "tabpfn-v3-classifier-v3_20260417_binary.ckpt",
+                "tabpfn-v3-classifier-v3_20260417_multiclass.ckpt",
+            ]
+        return [
+            "tabpfn-v3-regressor-v3_20260417_mediumdata.ckpt",
+            "tabpfn-v3-regressor-v3_20260506_timeseries.ckpt",
+        ]
+
+    def _log_license(self, device: str):
+        global _HAS_LOGGED_TABPFN_LICENSE
+        if not _HAS_LOGGED_TABPFN_LICENSE:
+            logger.log(20, "\tBuilt with PriorLabs-TabPFN v3")
+            _HAS_LOGGED_TABPFN_LICENSE = True
+
+
 class RealTabPFNv2Model(TabPFNModel):
     """RealTabPFN-v2 version
 
