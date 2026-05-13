@@ -481,6 +481,66 @@ class TabPFNv3Model(TabPFNModel):
             _HAS_LOGGED_TABPFN_LICENSE = True
 
 
+class TabPFNv3ThinkingModel(TabPFNModel):
+    """TabPFN v3 with thinking mode — cloud inference via tabpfn_client API.
+
+    Uses ``thinking_mode=True, thinking_effort="high"`` for maximum accuracy.
+    No local GPU required; calls the PriorLabs cloud API.
+
+    Install: pip install tabpfn-client
+    Authentication: run ``tabpfn_client login`` once before first use.
+
+    .. versionadded:: 1.6.0
+    """
+
+    ag_key = "TABPFN-V3-THINKING"
+    ag_name = "TabPFN-v3-Thinking"
+
+    def _fit(
+        self,
+        X,
+        y,
+        num_cpus: int = 1,
+        num_gpus: int = 0,
+        time_limit: float | None = None,
+        verbosity: int = 2,
+        **kwargs,
+    ):
+        try:
+            from tabpfn_client import TabPFNClassifier, TabPFNRegressor
+        except ImportError as e:
+            raise ImportError(
+                "TabPFNv3ThinkingModel requires tabpfn-client. "
+                "Install with: pip install tabpfn-client"
+            ) from e
+
+        is_classification = self.problem_type in ["binary", "multiclass"]
+        X = self.preprocess(X, y=y, is_train=True)
+
+        model_cls = TabPFNClassifier if is_classification else TabPFNRegressor
+        self.model = model_cls(thinking_mode=True, thinking_effort="high")
+        self.model.fit(X, y)
+
+    def _get_default_resources(self) -> tuple[int, int]:
+        return 1, 0  # CPU only — inference is remote
+
+    def get_minimum_resources(self, is_gpu_available: bool = False) -> dict:
+        return {"num_cpus": 1, "num_gpus": 0}
+
+    def get_device(self) -> str:
+        return "cpu"
+
+    def _set_device(self, device: str):
+        pass  # No local model to move
+
+    @staticmethod
+    def extra_checkpoints_for_tuning(problem_type: str) -> list[str]:
+        return []
+
+    def _log_license(self, device: str):
+        pass
+
+
 class RealTabPFNv2Model(TabPFNModel):
     """RealTabPFN-v2 version
 
