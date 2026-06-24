@@ -46,6 +46,32 @@ class TabDPTModel(AbstractTorchModel):
         self._predict_hps = None
         self._use_flash_og = None
 
+    def _get_default_searchspace(self) -> dict:
+        """HPO search space mirroring TabArena's TabDPT config space.
+
+        Reference: tabarena ``models/tabdpt/generate.py``. TabDPT has no
+        tunable checkpoints, so HPO searches its inference-time knobs. Only the
+        parameters this model actually plumbs through to TabDPT are included
+        (``temperature``, ``context_size``, ``permute_classes``); TabArena's
+        ``normalizer``/``clip_sigma``/``feature_reduction``/``faiss_metric``/
+        ``missing_indicators`` are not supported here. ``temperature`` and
+        ``permute_classes`` apply to classification only and are dropped for
+        regression in ``_get_tabdpt_params``.
+        """
+        from autogluon.common import space
+
+        searchspace = super()._get_default_searchspace()
+        searchspace.update(
+            {
+                "temperature": space.Categorical(
+                    0.8, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.9, 1.0, 1.25, 1.5
+                ),
+                "context_size": space.Categorical(2048, 768, 256),
+                "permute_classes": space.Categorical(True, False),
+            }
+        )
+        return searchspace
+
     def _fit(
         self,
         X: pd.DataFrame,

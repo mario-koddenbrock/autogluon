@@ -350,6 +350,93 @@ class TabPFNModel(AbstractTorchModel):
     def extra_checkpoints_for_tuning(problem_type: str) -> list[str]:
         raise NotImplementedError("This method must be implemented in the subclass.")
 
+    @classmethod
+    def _zip_model_path_searchspace(cls) -> list[list[str | None]]:
+        """Index-zip the per-task tuning checkpoints into ``zip_model_path`` pairs.
+
+        Mirrors TabArena's ``_get_model_path_zip``: the classification and
+        regression checkpoint lists are paired by index (the shorter list is
+        clamped at its last entry) so configs differ in a coordinated way rather
+        than across every clf×reg combination. The first entry is the default
+        checkpoint pair. Returns ``None`` if the subclass exposes no extra
+        tuning checkpoints.
+        """
+        try:
+            clf_models = cls.extra_checkpoints_for_tuning("classification")
+            reg_models = cls.extra_checkpoints_for_tuning("regression")
+        except NotImplementedError:
+            return None
+        if not clf_models and not reg_models:
+            return None
+        zip_model_paths: list[list[str | None]] = [
+            [cls.default_classification_model, cls.default_regression_model],
+        ]
+        n_clf = len(clf_models)
+        n_reg = len(reg_models)
+        for i in range(max(n_clf, n_reg)):
+            zip_model_paths.append(
+                [clf_models[min(i, n_clf - 1)], reg_models[min(i, n_reg - 1)]]
+            )
+        return zip_model_paths
+
+    def _tabarena_searchspace(self) -> dict:
+        """HPO search space mirroring TabArena's RealTabPFN-v2.5 config space.
+
+        Reference: tabarena ``models/tabpfnv2_5/generate.py``. Tunes inference
+        temperature, probability balancing, inference-config knobs, and the
+        preprocessing pipeline. The pretrained checkpoint (``zip_model_path``)
+        is added only for subclasses that expose extra tuning checkpoints;
+        subclasses without them (e.g. RealTabPFN-v2) tune everything else.
+        Task-irrelevant keys (e.g. ``balance_probabilities`` for regression)
+        are dropped by ``_fit``. Subclasses opt in by returning this from
+        ``_get_default_searchspace``; the base class leaves HPO disabled.
+        """
+        from autogluon.common import space
+
+        searchspace = super()._get_default_searchspace()
+        searchspace.update(
+            {
+                "softmax_temperature": space.Categorical(
+                    0.25, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.25, 1.5
+                ),
+                "balance_probabilities": space.Categorical(True, False),
+                "inference_config/OUTLIER_REMOVAL_STD": space.Categorical(3, 6, 12),
+                "inference_config/POLYNOMIAL_FEATURES": space.Categorical("no", 25),
+                "inference_config/REGRESSION_Y_PREPROCESS_TRANSFORMS": space.Categorical(
+                    [None],
+                    [None, "safepower"],
+                    ["safepower"],
+                    ["kdi_alpha_0.3"],
+                    ["kdi_alpha_1.0"],
+                    ["kdi_alpha_3.0"],
+                    ["quantile_uni"],
+                ),
+                "preprocessing/scaling": space.Categorical(
+                    ["none"],
+                    ["quantile_uni_coarse"],
+                    ["quantile_norm_coarse"],
+                    ["kdi_uni"],
+                    ["kdi_alpha_0.3"],
+                    ["kdi_alpha_3.0"],
+                    ["safepower", "quantile_uni"],
+                    ["none", "quantile_uni_coarse"],
+                    ["squashing_scaler_default", "quantile_uni_coarse"],
+                    ["squashing_scaler_default"],
+                ),
+                "preprocessing/categoricals": space.Categorical(
+                    "numeric", "onehot", "none"
+                ),
+                "preprocessing/append_original": space.Categorical(True, False),
+                "preprocessing/global": space.Categorical(
+                    None, "svd", "svd_quarter_components"
+                ),
+            }
+        )
+        zip_paths = self._zip_model_path_searchspace()
+        if zip_paths is not None:
+            searchspace["zip_model_path"] = space.Categorical(*zip_paths)
+        return searchspace
+
     def _log_license(self, device: str):
         pass
 
@@ -402,6 +489,10 @@ class RealTabPFNv25Model(TabPFNModel):
             "tabpfn-v2.5-regressor-v2.5_small-samples.ckpt",
             "tabpfn-v2.5-regressor-v2.5_variant.ckpt",
         ]
+
+    def _get_default_searchspace(self) -> dict:
+        # Full TabArena RealTabPFN-v2.5 space, incl. checkpoint tuning.
+        return self._tabarena_searchspace()
 
     def _log_license(self, device: str):
         global _HAS_LOGGED_TABPFN_NONCOMMERICAL
@@ -557,6 +648,11 @@ class RealTabPFNv2Model(TabPFNModel):
     # TODO: Verify if this is the same as the "default" ckpt
     default_classification_model: str | None = "tabpfn-v2-classifier-finetuned-zk73skhh.ckpt"
     default_regression_model: str | None = "tabpfn-v2-regressor-v2_default.ckpt"
+
+    def _get_default_searchspace(self) -> dict:
+        # v2.5-style TabArena space. RealTabPFN-v2 exposes no extra tuning
+        # checkpoints, so zip_model_path is omitted; everything else is tuned.
+        return self._tabarena_searchspace()
 
     def _get_default_auxiliary_params(self) -> dict:
         default_auxiliary_params = super()._get_default_auxiliary_params()
