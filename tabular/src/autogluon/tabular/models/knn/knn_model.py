@@ -103,6 +103,20 @@ class KNNModel(AbstractModel):
             logger.log(15, "sample_weight not yet supported for KNNModel, this model will ignore them in training.")
 
         num_rows_max = len(X)
+        # Clamp n_neighbors to the available training rows. On very small datasets
+        # — and the tiny inner CV/bagging folds produced during HPO — the default
+        # or searched n_neighbors can be >= n_samples, which sklearn rejects
+        # ("Expected n_neighbors < n_samples_fit"), failing the whole fit. The LOO
+        # OOF path leaves one sample out, so cap at num_rows - 1 (>= 1).
+        max_n_neighbors = max(1, num_rows_max - 1)
+        n_neighbors = params.get("n_neighbors", 5)
+        if n_neighbors > max_n_neighbors:
+            logger.log(
+                15,
+                f"\tClamping n_neighbors from {n_neighbors} to {max_n_neighbors} "
+                f"({num_rows_max} training rows available).",
+            )
+            params["n_neighbors"] = max_n_neighbors
         # FIXME: v0.1 Must store final num rows for refit_full or else will use everything! Worst case refit_full could train far longer than the original model.
         if time_limit is None or num_rows_max <= 10000:
             self.model = self._get_model_type()(**params).fit(X, y)
