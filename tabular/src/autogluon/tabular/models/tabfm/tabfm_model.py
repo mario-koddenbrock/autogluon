@@ -38,6 +38,7 @@ class TabFMModel(AbstractTorchModel):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._feature_generator = None
+        self._model_type = None  # "classification" | "regression"; set in _fit
 
     def _get_default_searchspace(self) -> dict:
         """HPO search space over TabFM's inference-time knobs.
@@ -83,6 +84,7 @@ class TabFMModel(AbstractTorchModel):
 
         is_classification = self.problem_type in [BINARY, MULTICLASS]
         model_type = "classification" if is_classification else "regression"
+        self._model_type = model_type
 
         # Load the pretrained checkpoint (HF Hub) directly onto the target
         # device; TabFM's loader accepts a device= kwarg and the sklearn
@@ -189,6 +191,39 @@ class TabFMModel(AbstractTorchModel):
         inner = self._inner_torch_model()
         if inner is not None and hasattr(inner, "to"):
             inner.to(device)
+
+    def save(self, path: str = None, verbose: bool = True) -> str:
+        """Persist without pickling the TabFM checkpoint.
+
+        The pretrained TabFM torch module contains unpicklable objects (a
+        ``get_activation`` lambda), so we detach it before AutoGluon pickles the
+        model and restore it afterward. The checkpoint is reloaded from the HF
+        cache in ``load()`` — it is identical across runs, so nothing is lost.
+        """
+        inner = self._inner_torch_model()
+        if inner is not None:
+            self.model.model = None
+        try:
+            return super().save(path=path, verbose=verbose)
+        finally:
+            if inner is not None:
+                self.model.model = inner
+
+    @classmethod
+    def load(cls, path: str, reset_paths: bool = True, verbose: bool = True):
+        """Reload the model and re-attach the TabFM checkpoint dropped on save."""
+        model = super().load(path=path, reset_paths=reset_paths, verbose=verbose)
+        wrapper = getattr(model, "model", None)
+        if wrapper is not None and getattr(wrapper, "model", None) is None:
+            import tabfm
+            import torch
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            model_type = getattr(model, "_model_type", None) or "classification"
+            wrapper.model = tabfm.tabfm_v1_0_0_pytorch.load(
+                model_type=model_type, device=device
+            )
+        return model
 
     def _get_default_resources(self) -> tuple[int, int]:
         num_cpus = ResourceManager.get_cpu_count(only_physical_cores=True)
