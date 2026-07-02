@@ -162,13 +162,33 @@ class TabFMModel(AbstractTorchModel):
             X[self._feature_generator.features_in] = self._feature_generator.transform(X=X)
         return X.to_numpy()
 
+    def _inner_torch_model(self):
+        """The underlying TabFM torch module, passed to the sklearn wrapper as
+        ``model=`` and stored on it as ``.model``."""
+        return getattr(self.model, "model", None)
+
     def get_device(self) -> str:
         import torch
 
-        try:
-            return str(next(self.model.model.parameters()).device)
-        except Exception:
-            return "cpu" if not torch.cuda.is_available() else "cuda"
+        inner = self._inner_torch_model()
+        if inner is not None:
+            try:
+                return str(next(inner.parameters()).device)
+            except Exception:
+                pass
+        return "cpu" if not torch.cuda.is_available() else "cuda"
+
+    def _set_device(self, device: str):
+        """Move the underlying TabFM torch model onto ``device``.
+
+        Required by ``AbstractTorchModel`` (its base ``_set_device`` raises
+        NotImplementedError) — it is called during ``save()`` (move to CPU) and
+        on load/predict. The sklearn wrapper reads its compute device from this
+        model object, so moving it here is sufficient.
+        """
+        inner = self._inner_torch_model()
+        if inner is not None and hasattr(inner, "to"):
+            inner.to(device)
 
     def _get_default_resources(self) -> tuple[int, int]:
         num_cpus = ResourceManager.get_cpu_count(only_physical_cores=True)
