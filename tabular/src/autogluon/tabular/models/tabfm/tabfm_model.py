@@ -12,6 +12,35 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
+# Activation-chunking thresholds (from TabArena PR #434).
+# When n_rows × n_features exceeds the trigger, chunk sizes are applied to
+# every network module that exposes row/col/ffn_chunk_size knobs.  This bounds
+# peak VRAM without changing predictions (chunking is mathematically exact).
+_CHUNK_TRIGGER_CELLS = 1_000_000
+_CHUNK_ROW = 4_096
+_CHUNK_COL = 64
+_CHUNK_FFN = 1 << 18  # 262 144
+
+
+def _memory_chunk_sizes(n_rows: int, n_features: int) -> "dict[str, int] | None":
+    if n_rows * n_features <= _CHUNK_TRIGGER_CELLS:
+        return None
+    return {"row": _CHUNK_ROW, "col": _CHUNK_COL, "ffn": _CHUNK_FFN}
+
+
+def _apply_chunk_sizes(network, chunk_sizes: "dict[str, int] | None") -> None:
+    row = col = ffn = None
+    if chunk_sizes is not None:
+        row, col, ffn = chunk_sizes["row"], chunk_sizes["col"], chunk_sizes["ffn"]
+    for module in network.modules():
+        if hasattr(module, "row_chunk_size"):
+            module.row_chunk_size = row
+        if hasattr(module, "col_chunk_size"):
+            module.col_chunk_size = col
+        if hasattr(module, "ffn_chunk_size"):
+            module.ffn_chunk_size = ffn
+
+
 # TabFM: Google Research's tabular foundation model (in-context learning, like
 # TabPFN / TabDPT). scikit-learn-compatible ``TabFMClassifier`` / ``TabFMRegressor``
 # wrapping a pretrained checkpoint downloaded from the HuggingFace Hub.
@@ -71,14 +100,12 @@ class TabFMModel(AbstractTorchModel):
         num_gpus: int = 0,
         **kwargs,
     ):
-        from torch.cuda import is_available
+        import torch
 
-        device = "cuda" if num_gpus != 0 else "cpu"
-        if (device == "cuda") and (not is_available()):
-            raise AssertionError(
-                "Fit specified to use GPU, but CUDA is not available on this machine. "
-                "Please switch to CPU usage instead.",
-            )
+        if num_gpus != 0 and torch.cuda.is_available():
+            device = "cuda"
+        else:
+            device = "cpu"
 
         import tabfm
 
@@ -95,7 +122,13 @@ class TabFMModel(AbstractTorchModel):
         params = self._get_tabfm_params()
 
         X = self.preprocess(X, y=y)
+        import numpy as np
         y = y.to_numpy()
+        # MPS does not support float64; cast regression targets to float32.
+        if y.dtype == np.float64:
+            y = y.astype(np.float32)
+        self._chunk_sizes = _memory_chunk_sizes(n_rows=X.shape[0], n_features=X.shape[1])
+        _apply_chunk_sizes(base_model, self._chunk_sizes)
         self.model = model_cls(model=base_model, **params)
         self.model.fit(X=X, y=y)
 
@@ -218,11 +251,15 @@ class TabFMModel(AbstractTorchModel):
             import tabfm
             import torch
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                device = "cuda"
+            else:
+                device = "cpu"
             model_type = getattr(model, "_model_type", None) or "classification"
             wrapper.model = tabfm.tabfm_v1_0_0_pytorch.load(
                 model_type=model_type, device=device
             )
+            _apply_chunk_sizes(wrapper.model, getattr(model, "_chunk_sizes", None))
         return model
 
     def _get_default_resources(self) -> tuple[int, int]:
