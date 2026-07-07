@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 from autogluon.common.utils.resource_utils import ResourceManager
@@ -10,6 +11,8 @@ from autogluon.tabular.models.abstract.abstract_torch_model import AbstractTorch
 if TYPE_CHECKING:
     import numpy as np
     import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 # Activation-chunking thresholds (from TabArena PR #434).
@@ -129,7 +132,33 @@ class TabFMModel(AbstractTorchModel):
             y = y.astype(np.float32)
         self._chunk_sizes = _memory_chunk_sizes(n_rows=X.shape[0], n_features=X.shape[1])
         _apply_chunk_sizes(base_model, self._chunk_sizes)
-        self.model = model_cls(model=base_model, **params)
+        base_clf = model_cls(model=base_model, **params)
+
+        # Datasets with more classes than TabFM supports natively (10) are handled
+        # by wrapping the base classifier in ManyClassClassifier (ECOC scheme from
+        # tabpfn-extensions), exactly as done for TabPFN.
+        many_class_threshold = self.params_aux.get("many_class_threshold", 10)
+        if is_classification and self.num_classes is not None and self.num_classes > many_class_threshold:
+            try:
+                from tabpfn_extensions.many_class import ManyClassClassifier
+
+                logger.log(
+                    20,
+                    f"\tTabFM: {self.num_classes} classes exceeds native limit ({many_class_threshold}). "
+                    "Using ManyClassClassifier (ECOC wrapper).",
+                )
+                self.model = ManyClassClassifier(estimator=base_clf, alphabet_size=many_class_threshold)
+            except ImportError:
+                logger.log(
+                    40,
+                    "\tTabFM: tabpfn-extensions not installed; cannot use ManyClassClassifier "
+                    f"for {self.num_classes} classes (limit: {many_class_threshold}). "
+                    "Install with: pip install tabpfn-extensions",
+                )
+                raise
+        else:
+            self.model = base_clf
+
         self.model.fit(X=X, y=y)
 
     def _get_tabfm_params(self) -> dict:
@@ -198,9 +227,9 @@ class TabFMModel(AbstractTorchModel):
         return X.to_numpy()
 
     def _inner_torch_model(self):
-        """The underlying TabFM torch module, passed to the sklearn wrapper as
-        ``model=`` and stored on it as ``.model``."""
-        return getattr(self.model, "model", None)
+        """The underlying TabFM torch module, unwrapping ManyClassClassifier if present."""
+        wrapper = getattr(self.model, "estimator", self.model)  # unwrap ManyClassClassifier
+        return getattr(wrapper, "model", None)
 
     def get_device(self) -> str:
         import torch
@@ -225,6 +254,10 @@ class TabFMModel(AbstractTorchModel):
         if inner is not None and hasattr(inner, "to"):
             inner.to(device)
 
+    def _sklearn_wrapper(self):
+        """Return the TabFM sklearn wrapper (unwrapping ManyClassClassifier if present)."""
+        return getattr(self.model, "estimator", self.model)
+
     def save(self, path: str = None, verbose: bool = True) -> str:
         """Persist without pickling the TabFM checkpoint.
 
@@ -234,19 +267,21 @@ class TabFMModel(AbstractTorchModel):
         cache in ``load()`` — it is identical across runs, so nothing is lost.
         """
         inner = self._inner_torch_model()
+        sklearn_wrapper = self._sklearn_wrapper()
         if inner is not None:
-            self.model.model = None
+            sklearn_wrapper.model = None
         try:
             return super().save(path=path, verbose=verbose)
         finally:
             if inner is not None:
-                self.model.model = inner
+                sklearn_wrapper.model = inner
 
     @classmethod
     def load(cls, path: str, reset_paths: bool = True, verbose: bool = True):
         """Reload the model and re-attach the TabFM checkpoint dropped on save."""
         model = super().load(path=path, reset_paths=reset_paths, verbose=verbose)
-        wrapper = getattr(model, "model", None)
+        # Unwrap ManyClassClassifier if present to reach the sklearn wrapper.
+        wrapper = getattr(model.model, "estimator", model.model) if model.model is not None else None
         if wrapper is not None and getattr(wrapper, "model", None) is None:
             import tabfm
             import torch
@@ -287,6 +322,7 @@ class TabFMModel(AbstractTorchModel):
                 "max_rows": None,
                 "max_features": None,
                 "max_classes": None,
+                "many_class_threshold": 10,  # Use ManyClassClassifier above this class count
             }
         )
         return default_auxiliary_params
